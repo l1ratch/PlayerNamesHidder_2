@@ -23,6 +23,7 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
 
     private TabAPI tabAPI;
     private boolean useTab;
+    private boolean citizensEnabled;
 
     @Override
     public void onEnable() {
@@ -38,6 +39,20 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
             useTab = false;
         }
 
+        // Проверяем наличие Citizens
+        citizensEnabled = Bukkit.getPluginManager().getPlugin("Citizens") != null;
+        if (citizensEnabled) {
+            getLogger().info("Citizens обнаружен. NPC не будут скрываться.");
+        }
+
+        getServer().getPluginManager().registerEvents(this, this);
+
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (!isNPC(player)) { // Игнорируем NPC
+                hidePlayerName(player);
+            }
+        }
+
         // Регистрация событий
         getServer().getPluginManager().registerEvents(this, this);
 
@@ -47,9 +62,17 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
         }
     }
 
+    // Проверка, является ли игрок NPC из Citizens
+    private boolean isNPC(Player player) {
+        if (!citizensEnabled) return false; // Citizens не установлен
+        return player.hasMetadata("NPC"); // Citizens добавляет метаданные "NPC" для своих NPC
+    }
+
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
-        hidePlayerName(event.getPlayer());
+        if (!isNPC(event.getPlayer())) { // Игнорируем NPC
+            hidePlayerName(event.getPlayer());
+        }
     }
 
     @EventHandler
@@ -57,6 +80,8 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
         if (!(event.getRightClicked() instanceof Player)) return;
 
         Player clickedPlayer = (Player) event.getRightClicked();
+        if (isNPC(clickedPlayer)) return; // Игнорируем NPC
+
         Player interactingPlayer = event.getPlayer();
 
         // Проверка прав
@@ -119,6 +144,8 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
 
     // Скрытие ника через TAB или Scoreboard
     private void hidePlayerName(Player player) {
+        if (isNPC(player)) return; // Не скрываем NPC
+
         if (useTab) {
             TabPlayer tabPlayer = tabAPI.getPlayer(player.getUniqueId());
             if (tabPlayer != null) {
@@ -128,13 +155,14 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
                 }
             }
         } else {
-            // Fallback: используем Scoreboard (если TAB не установлен)
             player.setScoreboard(Bukkit.getScoreboardManager().getNewScoreboard());
         }
     }
 
     // Показ ника через TAB или Scoreboard
     private void showPlayerName(Player player) {
+        if (isNPC(player)) return; // Не показываем NPC
+
         if (useTab) {
             TabPlayer tabPlayer = tabAPI.getPlayer(player.getUniqueId());
             if (tabPlayer != null) {
@@ -144,7 +172,6 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
                 }
             }
         } else {
-            // Fallback: возвращаем стандартную Scoreboard
             player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
         }
     }
