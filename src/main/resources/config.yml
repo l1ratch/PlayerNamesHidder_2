@@ -1,0 +1,17 @@
+# Настройки плагина PlayerNamesHidder
+
+# Право для просмотра ников: pnh.show (по умолчанию есть у всех)
+
+use-action-bar: false # Если true, ник отображается в ActionBar, а не над головой
+display-time: 2      # Время (в секундах), на которое показывается ник
+max-distance: 5.0    # Максимальная дистанция для просмотра ника
+
+# Эффекты при показе ника
+effects:
+  enabled: true
+  particle-type: VILLAGER_HAPPY  # Тип частиц (список: https://hub.spigotmc.org/javadocs/bukkit/org/bukkit/Particle.html)
+  particle-amount: 10            # Количество частиц
+  sound-enabled: true
+  sound-type: ENTITY_PLAYER_LEVELUP  # Звук (список: https://hub.spigotmc.org/javadocs/bukkit/org/bukkit/Sound.html)
+  sound-volume: 1.0              # Громкость (0.0 - 1.0)
+  sound-pitch: 1.0               # Тон (0.5 - 2.0)
