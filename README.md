@@ -14,7 +14,7 @@
 
 ## ⚙️ Конфигурация
 
-Все настройки плагина хранятся в файле [`config.yml`](config.yml). Основные параметры:
+Все настройки плагина хранятся в файле [`config.yml`](https://github.com/l1ratch/PlayerNamesHidder_2/blob/master/src/main/resources/config.yml). Основные параметры:
 
 ```yaml
 # Формат отображения: ACTION_BAR, PLAYER_TAG, BOTH
