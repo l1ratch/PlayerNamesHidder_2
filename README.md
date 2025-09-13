@@ -36,6 +36,8 @@ effects:
   particle-amount: 10
   sound-enabled: true
   sound-type: ENTITY_PLAYER_LEVELUP
+  sound-volume: 1.0
+  sound-pitch: 1.0
 ```
 
 ## 🎮 Команды и права
