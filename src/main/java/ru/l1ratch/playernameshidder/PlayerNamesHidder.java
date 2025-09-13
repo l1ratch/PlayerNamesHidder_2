@@ -157,7 +157,7 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
             // Fallback на scoreboard
             ScoreboardManager manager = Bukkit.getScoreboardManager();
             if (manager != null) {
-                player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+                player.setScoreboard(manager.getNewScoreboard());
             }
         }
     }
@@ -177,7 +177,7 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
             // Fallback на scoreboard
             ScoreboardManager manager = Bukkit.getScoreboardManager();
             if (manager != null) {
-                player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+                player.setScoreboard(manager.getMainScoreboard());
             }
         }
     }
@@ -198,7 +198,7 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
             // Fallback: для viewer показываем стандартную scoreboard
             ScoreboardManager manager = Bukkit.getScoreboardManager();
             if (manager != null) {
-                viewer.setScoreboard(manager.getNewScoreboard());
+                viewer.setScoreboard(manager.getMainScoreboard());
             }
         }
     }
