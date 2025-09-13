@@ -1,6 +1,5 @@
 package ru.l1ratch.playernameshidder;
 
-import me.neznamy.tab.api.nametag.NameTagManager;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Particle;
@@ -10,6 +9,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -18,61 +18,194 @@ import net.md_5.bungee.api.chat.TextComponent;
 
 import me.neznamy.tab.api.TabAPI;
 import me.neznamy.tab.api.TabPlayer;
+import me.neznamy.tab.api.nametag.NameTagManager;
+
+import java.util.HashMap;
+import java.util.UUID;
 
 public class PlayerNamesHidder extends JavaPlugin implements Listener {
 
     private TabAPI tabAPI;
+    private NameTagManager nameTagManager;
     private boolean useTab;
     private boolean citizensEnabled;
+    private HashMap<UUID, Boolean> showAllPlayers = new HashMap<>();
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
 
         // Проверяем наличие TAB
-        if (Bukkit.getPluginManager().getPlugin("TAB") != null) {
-            tabAPI = TabAPI.getInstance();
-            useTab = true;
-            getLogger().info("TAB обнаружен! Используем его API для управления никами.");
-        } else {
-            getLogger().warning("TAB не найден. Плагин будет работать в урезанном режиме (Scoreboard).");
-            useTab = false;
-        }
-
-        // Проверяем наличие Citizens
+        useTab = Bukkit.getPluginManager().getPlugin("TAB") != null;
         citizensEnabled = Bukkit.getPluginManager().getPlugin("Citizens") != null;
-        if (citizensEnabled) {
-            getLogger().info("Citizens обнаружен. NPC не будут скрываться.");
-        }
 
-        getServer().getPluginManager().registerEvents(this, this);
+        // Отложенная инициализация TAB API
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (useTab) {
+                try {
+                    tabAPI = TabAPI.getInstance();
+                    nameTagManager = tabAPI.getNameTagManager();
 
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            if (!isNPC(player)) { // Игнорируем NPC
-                hidePlayerName(player);
+                    if (nameTagManager != null) {
+                        getLogger().info("TAB NameTagManager успешно загружен!");
+                    } else {
+                        getLogger().warning("TAB NameTagManager недоступен. Возможно, функция отключена в конфиге TAB.");
+                        useTab = false;
+                    }
+                } catch (IllegalStateException e) {
+                    useTab = false;
+                    getLogger().warning("TAB API недоступен. Переключаемся на fallback-режим.");
+                }
             }
-        }
 
-        // Регистрация событий
-        getServer().getPluginManager().registerEvents(this, this);
+            getServer().getPluginManager().registerEvents(this, this);
 
-        // Добавляем всех онлайн-игроков в скрытие
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            hidePlayerName(player);
+            // Скрываем ники для всех онлайн-игроков
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                if (!isNPC(player)) {
+                    hidePlayerName(player);
+                }
+            }
+        }, 20L);
+
+        setupCommand();
+    }
+
+    private void setupCommand() {
+        getCommand("pnh").setExecutor((sender, command, label, args) -> {
+            if (!(sender instanceof Player)) {
+                sender.sendMessage(ChatColor.RED + "Эта команда только для игроков.");
+                return true;
+            }
+
+            Player player = (Player) sender;
+            if (!player.hasPermission("pnh.showall")) {
+                player.sendMessage(ChatColor.RED + "У вас нет прав на эту команду.");
+                return true;
+            }
+
+            UUID playerId = player.getUniqueId();
+            boolean currentState = showAllPlayers.getOrDefault(playerId, false);
+            boolean newState = !currentState;
+            showAllPlayers.put(playerId, newState);
+
+            if (newState) {
+                // Включаем показ ников для всех игроков только для этого зрителя
+                for (Player target : Bukkit.getOnlinePlayers()) {
+                    if (!isNPC(target)) {
+                        showPlayerNameForViewer(target, player);
+                    }
+                }
+                player.sendMessage(ChatColor.GREEN + "Режим показа всех ников включен.");
+            } else {
+                // Выключаем показ ников для всех игроков только для этого зрителя
+                for (Player target : Bukkit.getOnlinePlayers()) {
+                    if (!isNPC(target)) {
+                        hidePlayerNameForViewer(target, player);
+                    }
+                }
+                player.sendMessage(ChatColor.GREEN + "Режим показа всех ников выключен.");
+            }
+            return true;
+        });
+    }
+
+    private boolean isNPC(Player player) {
+        return citizensEnabled && player.hasMetadata("NPC");
+    }
+
+    // Скрыть ник игрока для всех
+    private void hidePlayerName(Player player) {
+        if (isNPC(player)) return;
+
+        if (useTab && nameTagManager != null) {
+            try {
+                TabPlayer tabPlayer = tabAPI.getPlayer(player.getUniqueId());
+                if (tabPlayer != null) {
+                    nameTagManager.hideNameTag(tabPlayer);
+                }
+            } catch (Exception ignored) {}
+        } else {
+            // Fallback на scoreboard
+            player.setScoreboard(Bukkit.getScoreboardManager().getNewScoreboard());
         }
     }
 
-    // Проверка, является ли игрок NPC из Citizens
-    private boolean isNPC(Player player) {
-        if (!citizensEnabled) return false; // Citizens не установлен
-        return player.hasMetadata("NPC"); // Citizens добавляет метаданные "NPC" для своих NPC
+    // Показать ник игрока для всех
+    private void showPlayerName(Player player) {
+        if (isNPC(player)) return;
+
+        if (useTab && nameTagManager != null) {
+            try {
+                TabPlayer tabPlayer = tabAPI.getPlayer(player.getUniqueId());
+                if (tabPlayer != null) {
+                    nameTagManager.showNameTag(tabPlayer);
+                }
+            } catch (Exception ignored) {}
+        } else {
+            // Fallback на scoreboard
+            player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+        }
+    }
+
+    // Показать ник игрока только для определенного зрителя (используем API TAB)
+    private void showPlayerNameForViewer(Player target, Player viewer) {
+        if (isNPC(target)) return;
+
+        if (useTab && nameTagManager != null) {
+            try {
+                TabPlayer tabTarget = tabAPI.getPlayer(target.getUniqueId());
+                TabPlayer tabViewer = tabAPI.getPlayer(viewer.getUniqueId());
+                if (tabTarget != null && tabViewer != null) {
+                    nameTagManager.showNameTag(tabTarget, tabViewer);
+                }
+            } catch (Exception ignored) {}
+        } else {
+            // Fallback: для viewer показываем стандартную scoreboard
+            viewer.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+        }
+    }
+
+    // Скрыть ник игрока только для определенного зрителя (используем API TAB)
+    private void hidePlayerNameForViewer(Player target, Player viewer) {
+        if (isNPC(target)) return;
+
+        if (useTab && nameTagManager != null) {
+            try {
+                TabPlayer tabTarget = tabAPI.getPlayer(target.getUniqueId());
+                TabPlayer tabViewer = tabAPI.getPlayer(viewer.getUniqueId());
+                if (tabTarget != null && tabViewer != null) {
+                    nameTagManager.hideNameTag(tabTarget, tabViewer);
+                }
+            } catch (Exception ignored) {}
+        } else {
+            // Fallback: для viewer показываем скрывающую scoreboard
+            viewer.setScoreboard(Bukkit.getScoreboardManager().getNewScoreboard());
+        }
     }
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
-        if (!isNPC(event.getPlayer())) { // Игнорируем NPC
-            hidePlayerName(event.getPlayer());
+        Player joinedPlayer = event.getPlayer();
+        if (!isNPC(joinedPlayer)) {
+            hidePlayerName(joinedPlayer);
+
+            // Если есть игроки с включенным showall, показываем им ник нового игрока
+            for (UUID viewerId : showAllPlayers.keySet()) {
+                if (showAllPlayers.get(viewerId)) {
+                    Player viewer = Bukkit.getPlayer(viewerId);
+                    if (viewer != null && viewer.isOnline()) {
+                        showPlayerNameForViewer(joinedPlayer, viewer);
+                    }
+                }
+            }
         }
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        UUID playerId = event.getPlayer().getUniqueId();
+        showAllPlayers.remove(playerId);
     }
 
     @EventHandler
@@ -80,17 +213,20 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
         if (!(event.getRightClicked() instanceof Player)) return;
 
         Player clickedPlayer = (Player) event.getRightClicked();
-        if (isNPC(clickedPlayer)) return; // Игнорируем NPC
+        if (isNPC(clickedPlayer)) return;
 
         Player interactingPlayer = event.getPlayer();
+        UUID interactingId = interactingPlayer.getUniqueId();
 
-        // Проверка прав
-        if (!interactingPlayer.hasPermission("pnh.show")) {
+        // Если у взаимодействующего игрока включен showall, ники уже видны
+        boolean showallEnabled = showAllPlayers.getOrDefault(interactingId, false) &&
+                interactingPlayer.hasPermission("pnh.showall");
+
+        if (!showallEnabled && !interactingPlayer.hasPermission("pnh.show")) {
             interactingPlayer.sendMessage(ChatColor.RED + "У вас нет прав на это действие.");
             return;
         }
 
-        // Проверка расстояния
         double maxDistance = getConfig().getDouble("max-distance");
         double distance = interactingPlayer.getLocation().distance(clickedPlayer.getLocation());
 
@@ -111,74 +247,62 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
 
         interactingPlayer.removeMetadata("distanceWarningSent", this);
 
-        // Отображаем ник (через TAB или ActionBar)
-        if (getConfig().getBoolean("use-action-bar")) {
-            showPlayerNameInActionBar(clickedPlayer, interactingPlayer);
-        } else {
-            showPlayerName(clickedPlayer);
+        // Всегда показываем эффекты и actionbar (если настроено)
+        displayPlayerName(clickedPlayer, interactingPlayer, getConfig().getInt("display-time") * 20L, showallEnabled);
+    }
+
+    private void displayPlayerName(Player target, Player viewer, long displayTicks, boolean showallEnabled) {
+        String displayType = getConfig().getString("display-type", "ACTION_BAR").toUpperCase();
+
+        // Всегда показываем actionbar, если настроено (даже при включенном showall)
+        if (displayType.equals("ACTION_BAR") || displayType.equals("BOTH")) {
+            String format = getConfig().getString("actionbar-format", "Игрок: %player_name%");
+            String message = format.replace("%player_name%", target.getName());
+
+            // Поддержка PlaceholderAPI
+            if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
+                message = me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(target, message);
+            }
+
+            viewer.spigot().sendMessage(ChatMessageType.ACTION_BAR,
+                    TextComponent.fromLegacyText(ChatColor.translateAlternateColorCodes('&', message)));
         }
 
-        // Эффекты и звуки
+        // Если showall выключен, показываем ник над головой на время
+        if (!showallEnabled && (displayType.equals("PLAYER_TAG") || displayType.equals("BOTH"))) {
+            showPlayerName(target);
+
+            // Скрываем ник после времени
+            if (displayTicks > 0) {
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        hidePlayerName(target);
+                    }
+                }.runTaskLater(this, displayTicks);
+            }
+        }
+
+        // Всегда показываем эффекты
         if (getConfig().getBoolean("effects.enabled")) {
-            Particle particle = Particle.valueOf(getConfig().getString("effects.particle-type"));
-            int amount = getConfig().getInt("effects.particle-amount");
-            clickedPlayer.getWorld().spawnParticle(particle, clickedPlayer.getLocation().add(0, 2, 0), amount);
+            try {
+                Particle particle = Particle.valueOf(getConfig().getString("effects.particle-type"));
+                int amount = getConfig().getInt("effects.particle-amount");
+                target.getWorld().spawnParticle(particle, target.getLocation().add(0, 2, 0), amount);
+            } catch (Exception e) {
+                getLogger().warning("Неверный тип частицы в конфиге: " + getConfig().getString("effects.particle-type"));
+            }
         }
 
         if (getConfig().getBoolean("effects.sound-enabled")) {
-            Sound sound = Sound.valueOf(getConfig().getString("effects.sound-type"));
-            float volume = (float) getConfig().getDouble("effects.sound-volume");
-            float pitch = (float) getConfig().getDouble("effects.sound-pitch");
-            clickedPlayer.getWorld().playSound(clickedPlayer.getLocation(), sound, volume, pitch);
-        }
-
-        // Скрываем ник через время
-        long delay = getConfig().getInt("display-time") * 20L;
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                hidePlayerName(clickedPlayer);
+            try {
+                Sound sound = Sound.valueOf(getConfig().getString("effects.sound-type"));
+                float volume = (float) getConfig().getDouble("effects.sound-volume");
+                float pitch = (float) getConfig().getDouble("effects.sound-pitch");
+                target.getWorld().playSound(target.getLocation(), sound, volume, pitch);
+            } catch (Exception e) {
+                getLogger().warning("Неверный тип звука в конфиге: " + getConfig().getString("effects.sound-type"));
             }
-        }.runTaskLater(this, delay);
-    }
-
-    // Скрытие ника через TAB или Scoreboard
-    private void hidePlayerName(Player player) {
-        if (isNPC(player)) return; // Не скрываем NPC
-
-        if (useTab) {
-            TabPlayer tabPlayer = tabAPI.getPlayer(player.getUniqueId());
-            if (tabPlayer != null) {
-                NameTagManager nameTagManager = tabAPI.getNameTagManager();
-                if (nameTagManager != null) {
-                    nameTagManager.hideNameTag(tabPlayer);
-                }
-            }
-        } else {
-            player.setScoreboard(Bukkit.getScoreboardManager().getNewScoreboard());
         }
-    }
-
-    // Показ ника через TAB или Scoreboard
-    private void showPlayerName(Player player) {
-        if (isNPC(player)) return; // Не показываем NPC
-
-        if (useTab) {
-            TabPlayer tabPlayer = tabAPI.getPlayer(player.getUniqueId());
-            if (tabPlayer != null) {
-                NameTagManager nameTagManager = tabAPI.getNameTagManager();
-                if (nameTagManager != null) {
-                    nameTagManager.showNameTag(tabPlayer);
-                }
-            }
-        } else {
-            player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
-        }
-    }
-
-    // Показ ника в ActionBar
-    private void showPlayerNameInActionBar(Player target, Player viewer) {
-        String message = ChatColor.GREEN + "Игрок: " + target.getName();
-        viewer.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacyText(message));
     }
 }

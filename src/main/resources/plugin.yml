@@ -2,4 +2,8 @@ name: PlayerNamesHidder
 version: '${project.version}'
 main: ru.l1ratch.playernameshidder.PlayerNamesHidder
 api-version: '1.20'
-softdepend: [TAB, Citizens]
+softdepend: [TAB, Citizens, "PlaceholderAPI"]
+permissions:
+  pnh.show:
+    description: Разрешение на использование команд плагина
+    default: true
