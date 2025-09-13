@@ -4,7 +4,7 @@
 # - pnh.showall - право на использование /pnh showall
 
 display-type: ACTION_BAR # Варианты: ACTION_BAR, PLAYER_TAG, BOTH
-actionbar-format: "Игрок: %player_name%" # Поддерживает плейсхолдеры (включая PlaceholderAPI)
+actionbar-format: "&aИгрок: [playername] &7| &eУровень: %player_level%" # Собственный плейсхолдер [playername] и PlaceholderAPI плейсхолдеры
 display-time: 2 # Время отображения ника в секундах (для обычного режима)
 max-distance: 5.0 # Максимальная дистанция для отображения ника
 

@@ -3,7 +3,16 @@ version: '${project.version}'
 main: ru.l1ratch.playernameshidder.PlayerNamesHidder
 api-version: '1.20'
 softdepend: [TAB, Citizens, "PlaceholderAPI"]
+commands:
+  pnh:
+    description: "Переключает режим показа всех ников"
+    usage: "/pnh"
+    permission: pnh.showall
+
 permissions:
   pnh.show:
-    description: Разрешение на использование команд плагина
+    description: "Позволяет видеть ники игроков при клике"
     default: true
+  pnh.showall:
+    description: "Позволяет использовать команду /pnh для постоянного показа ников"
+    default: op

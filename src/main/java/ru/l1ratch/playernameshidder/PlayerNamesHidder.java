@@ -19,8 +19,10 @@ import net.md_5.bungee.api.chat.TextComponent;
 import me.neznamy.tab.api.TabAPI;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.nametag.NameTagManager;
+import org.bukkit.scoreboard.ScoreboardManager;
 
 import java.util.HashMap;
+import java.util.Objects;
 import java.util.UUID;
 
 public class PlayerNamesHidder extends JavaPlugin implements Listener {
@@ -29,15 +31,15 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
     private NameTagManager nameTagManager;
     private boolean useTab;
     private boolean citizensEnabled;
-    private HashMap<UUID, Boolean> showAllPlayers = new HashMap<>();
+    private boolean placeholderAPIEnabled;
+    private final HashMap<UUID, Boolean> showAllPlayers = new HashMap<>();
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
 
-        // Проверяем наличие TAB
-        useTab = Bukkit.getPluginManager().getPlugin("TAB") != null;
-        citizensEnabled = Bukkit.getPluginManager().getPlugin("Citizens") != null;
+        // Проверяем наличие зависимостей
+        checkDependencies();
 
         // Отложенная инициализация TAB API
         Bukkit.getScheduler().runTaskLater(this, () -> {
@@ -71,8 +73,34 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
         setupCommand();
     }
 
+    private void checkDependencies() {
+        // Проверяем наличие TAB
+        useTab = Bukkit.getPluginManager().getPlugin("TAB") != null;
+        if (useTab) {
+            getLogger().info("TAB обнаружен! Используем его API для управления никами.");
+        } else {
+            getLogger().info("TAB не найден. Используем стандартные методы работы (Scoreboard).");
+        }
+
+        // Проверяем наличие Citizens
+        citizensEnabled = Bukkit.getPluginManager().getPlugin("Citizens") != null;
+        if (citizensEnabled) {
+            getLogger().info("Citizens обнаружен. NPC не будут скрываться.");
+        } else {
+            getLogger().info("Citizens не найден. Функционал NPC отключен.");
+        }
+
+        // Проверяем наличие PlaceholderAPI
+        placeholderAPIEnabled = Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null;
+        if (placeholderAPIEnabled) {
+            getLogger().info("PlaceholderAPI обнаружен. Поддерживаются расширенные плейсхолдеры.");
+        } else {
+            getLogger().info("PlaceholderAPI не найден. Будет использован только базовый плейсхолдер [playername].");
+        }
+    }
+
     private void setupCommand() {
-        getCommand("pnh").setExecutor((sender, command, label, args) -> {
+        Objects.requireNonNull(getCommand("pnh")).setExecutor((sender, command, label, args) -> {
             if (!(sender instanceof Player)) {
                 sender.sendMessage(ChatColor.RED + "Эта команда только для игроков.");
                 return true;
@@ -127,7 +155,10 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
             } catch (Exception ignored) {}
         } else {
             // Fallback на scoreboard
-            player.setScoreboard(Bukkit.getScoreboardManager().getNewScoreboard());
+            ScoreboardManager manager = Bukkit.getScoreboardManager();
+            if (manager != null) {
+                player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+            }
         }
     }
 
@@ -144,7 +175,10 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
             } catch (Exception ignored) {}
         } else {
             // Fallback на scoreboard
-            player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+            ScoreboardManager manager = Bukkit.getScoreboardManager();
+            if (manager != null) {
+                player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+            }
         }
     }
 
@@ -162,7 +196,10 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
             } catch (Exception ignored) {}
         } else {
             // Fallback: для viewer показываем стандартную scoreboard
-            viewer.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+            ScoreboardManager manager = Bukkit.getScoreboardManager();
+            if (manager != null) {
+                viewer.setScoreboard(manager.getNewScoreboard());
+            }
         }
     }
 
@@ -180,7 +217,10 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
             } catch (Exception ignored) {}
         } else {
             // Fallback: для viewer показываем скрывающую scoreboard
-            viewer.setScoreboard(Bukkit.getScoreboardManager().getNewScoreboard());
+            ScoreboardManager manager = Bukkit.getScoreboardManager();
+            if (manager != null) {
+                viewer.setScoreboard(manager.getNewScoreboard());
+            }
         }
     }
 
@@ -256,16 +296,28 @@ public class PlayerNamesHidder extends JavaPlugin implements Listener {
 
         // Всегда показываем actionbar, если настроено (даже при включенном showall)
         if (displayType.equals("ACTION_BAR") || displayType.equals("BOTH")) {
-            String format = getConfig().getString("actionbar-format", "Игрок: %player_name%");
-            String message = format.replace("%player_name%", target.getName());
+            String format = getConfig().getString("actionbar-format", "&aИгрок: [playername]");
 
-            // Поддержка PlaceholderAPI
-            if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
-                message = me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(target, message);
+            // Заменяем собственный плейсхолдер [playername]
+            String message = format.replace("[playername]", target.getName());
+
+            // Обрабатываем PlaceholderAPI плейсхолдеры, если установлен
+            if (placeholderAPIEnabled) {
+                try {
+                    // Используем рефлексию для доступа к PlaceholderAPI без прямого импорта
+                    Class<?> placeholderAPI = Class.forName("me.clip.placeholderapi.PlaceholderAPI");
+                    message = (String) placeholderAPI.getMethod("setPlaceholders", Player.class, String.class)
+                            .invoke(null, target, message);
+                } catch (Exception e) {
+                    getLogger().warning("Не удалось обработать плейсхолдеры через PlaceholderAPI: " + e.getMessage());
+                }
             }
 
+            // Применяем цветовые коды
+            message = ChatColor.translateAlternateColorCodes('&', message);
+
             viewer.spigot().sendMessage(ChatMessageType.ACTION_BAR,
-                    TextComponent.fromLegacyText(ChatColor.translateAlternateColorCodes('&', message)));
+                    TextComponent.fromLegacyText(message));
         }
 
         // Если showall выключен, показываем ник над головой на время
